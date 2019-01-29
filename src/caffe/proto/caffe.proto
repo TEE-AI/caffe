@@ -98,7 +98,7 @@ message NetParameter {
 // NOTE
 // Update the next available ID when you add a new SolverParameter field.
 //
-// SolverParameter next available ID: 43 (last added: weights)
+// SolverParameter next available ID: 42 (last added: layer_wise_reduce)
 message SolverParameter {
   //////////////////////////////////////////////////////////////////////////////
   // Specifying the train and test networks
@@ -186,11 +186,7 @@ message SolverParameter {
   optional float clip_gradients = 35 [default = -1];
 
   optional int32 snapshot = 14 [default = 0]; // The snapshot interval
-  // The prefix for the snapshot.
-  // If not set then is replaced by prototxt file path without extension.
-  // If is set to directory then is augmented by prototxt file name
-  // without extention.
-  optional string snapshot_prefix = 15;
+  optional string snapshot_prefix = 15; // The prefix for the snapshot.
   // whether to snapshot diff in the results or not. Snapshotting diff will help
   // debugging but the final protocol buffer size will be much larger.
   optional bool snapshot_diff = 16 [default = false];
@@ -248,8 +244,8 @@ message SolverParameter {
 
   // Path to caffemodel file(s) with pretrained weights to initialize finetuning.
   // Tha same as command line --weights parameter for caffe train command.
-  // If command line --weights parameter is specified, it has higher priority
-  // and overwrites this one(s).
+  // If command line --weights parameter if specified, it has higher priority
+  // and owerwrites this one(s).
   // If --snapshot command line parameter is specified, this one(s) are ignored.
   // If several model files are expected, they can be listed in a one 
   // weights parameter separated by ',' (like in a command string) or
@@ -322,7 +318,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 149 (last added: clip_param)
+// LayerParameter next available layer-specific ID: 149 (last added: permute_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -378,7 +374,6 @@ message LayerParameter {
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
   optional BiasParameter bias_param = 141;
-  optional ClipParameter clip_param = 148;
   optional ConcatParameter concat_param = 104;
   optional ContrastiveLossParameter contrastive_loss_param = 105;
   optional ConvolutionParameter convolution_param = 106;
@@ -403,10 +398,12 @@ message LayerParameter {
   optional MemoryDataParameter memory_data_param = 119;
   optional MVNParameter mvn_param = 120;
   optional ParameterParameter parameter_param = 145;
+  optional PermuteParameter permute_param = 148;
   optional PoolingParameter pooling_param = 121;
   optional PowerParameter power_param = 122;
   optional PReLUParameter prelu_param = 131;
   optional PythonParameter python_param = 130;
+  optional QuantizationParameter quantization_param = 147;
   optional RecurrentParameter recurrent_param = 146;
   optional ReductionParameter reduction_param = 136;
   optional ReLUParameter relu_param = 123;
@@ -416,11 +413,45 @@ message LayerParameter {
   optional SoftmaxParameter softmax_param = 125;
   optional SPPParameter spp_param = 132;
   optional SliceParameter slice_param = 126;
-  optional SwishParameter swish_param = 147;
   optional TanHParameter tanh_param = 127;
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
   optional WindowDataParameter window_data_param = 129;
+  optional ROIPoolingParameter roi_pooling_param = 8266711;
+  optional SmoothL1LossParameter smooth_l1_loss_param = 8266712;
+  optional ProposalParameter proposal_param = 8266713;
+}
+
+message PermuteParameter {
+  // The new orders of the axes of data. Notice it should be with
+  // in the same range as the input data, and it starts from 0.
+  // Do not provide repeated order.
+  repeated uint32 order = 1;
+}
+
+// Message for layers with reduced word with arithmetic
+message QuantizationParameter{
+  enum Precision {
+    FLOATING_POINT = 0;
+    DYNAMIC_FIXED_POINT = 1;
+    ONE_BIT = 2;
+    TWO_BITS = 3;
+    THREE_BITS = 4;
+    FIVE_BITS = 5;
+  }
+  optional Precision coef_precision = 1 [default = FLOATING_POINT];
+  // Dynamic fixed point word width
+  optional uint32 bw_params     = 2 [default = 32];
+  optional int32  fl_params     = 3 [default = 16];
+  optional float  weight_gain   = 4 [default = 1.0];
+  optional float  bias_gain     = 5 [default = 1.0];
+  // layer input data quantization:
+  optional bool   data_in_quantize = 6 [default = false];
+  optional int32  data_in_shift_bits = 7 [default = 0];
+  optional bool   data_out_quantize = 8 [default = false];
+  optional int32  data_out_shift_bits = 9 [default = 0];
+  optional uint32 bw_data = 10 [default = 32];
+  optional int32  fl_data = 11 [default = 16];
 }
 
 // Message that stores parameters used to apply transformation
@@ -504,12 +535,6 @@ message ArgMaxParameter {
   // By default ArgMaxLayer maximizes over the flattened trailing dimensions
   // for each index of the first / num dimension.
   optional int32 axis = 3;
-}
-
-// Message that stores parameters used by ClipLayer
-message ClipParameter {
-  required float min = 1;
-  required float max = 2;
 }
 
 message ConcatParameter {
@@ -943,12 +968,6 @@ message PoolingParameter {
   // If global_pooling then it will pool over the size of the bottom by doing
   // kernel_h = bottom->height and kernel_w = bottom->width
   optional bool global_pooling = 12 [default = false];
-  // How to calculate the output size - using ceil (default) or floor rounding.
-  enum RoundMode {
-    CEIL = 0;
-    FLOOR = 1;
-  }
-  optional RoundMode round_mode = 13 [default = CEIL];
 }
 
 message PowerParameter {
@@ -1168,15 +1187,6 @@ message SoftmaxParameter {
   // from the end (e.g., -1 for the last axis).
   // Any other axes will be evaluated as independent softmaxes.
   optional int32 axis = 2 [default = 1];
-}
-
-// Message that stores parameters used by SwishLayer
-message SwishParameter {
-  // Beta parameter for the Swish activation function
-  // Described in:
-  // Prajit Ramachandran, Barret Zoph, Quoc V. Le. (2017). Searching for
-  // Activation Functions. https://arxiv.org/abs/1710.05941v2
-  optional float beta = 1 [default = 1];
 }
 
 message TanHParameter {
@@ -1446,4 +1456,34 @@ message PReLUParameter {
   optional FillerParameter filler = 1;
   // Whether or not slope parameters are shared across channels.
   optional bool channel_shared = 2 [default = false];
+}
+
+// Message that stores parameters used by ProposalLayer
+message ProposalParameter {
+  optional uint32 feat_stride = 1 [default = 16];
+  optional uint32 base_size = 2 [default = 16];
+  optional uint32 min_size = 3 [default = 16];
+  repeated float ratio = 4;
+  repeated float scale = 5;
+  optional uint32 pre_nms_topn = 6 [default = 6000];
+  optional uint32 post_nms_topn = 7 [default = 300];
+  optional float nms_thresh = 8 [default = 0.7];
+}
+
+message ROIPoolingParameter {
+  // Pad, kernel size, and stride are all given as a single value for equal
+  // dimensions in height and width or as Y, X pairs.
+  optional uint32 pooled_h = 1 [default = 0]; // The pooled output height
+  optional uint32 pooled_w = 2 [default = 0]; // The pooled output width
+  // Multiplicative spatial scale factor to translate ROI coords from their
+  // input scale to the scale used when pooling
+  optional float spatial_scale = 3 [default = 1];
+}
+
+
+message SmoothL1LossParameter {
+  // SmoothL1Loss(x) =
+  //   0.5 * (sigma * x) ** 2    -- if x < 1.0 / sigma / sigma
+  //   |x| - 0.5 / sigma / sigma -- otherwise
+  optional float sigma = 1 [default = 1];
 }
